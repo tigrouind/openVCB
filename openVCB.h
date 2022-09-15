@@ -206,12 +206,15 @@ namespace openVCB {
 		// Decode base64 data from clipboard, then process logic data
 		bool readFromBlueprint(std::string clipboardData);
 
+		// Parse VCB header
+		void parseHeader(const std::vector<unsigned char>& logicData, int headerSize, unsigned char*& compressedData, size_t& compressedSize, int& width, int& height, int& imgDSize);
+
 		// Decompress zstd logic data to an image
-		bool processLogicData(std::vector<unsigned char> logicData, int headerSize);
+		bool processLogicData(unsigned char* compressedData, size_t compressedSize, int width, int height, int imgDSize);
 
 		// Decompress zstd decoration data to an image
-		void processDecorationData(std::vector<unsigned char> decorationData, int*& originalImage);
-
+		bool processDecorationData(unsigned char* compressedData, size_t compressedSize, int width, int height, int imgDSize, int*& decoData);
+		
 		// Samples the ink at a pixel. Returns ink and group id
 		std::pair<Ink, int> sample(glm::ivec2 pos);
 
@@ -249,6 +252,10 @@ namespace openVCB {
 			return true;
 #endif
 		}
+
+	private:
+		bool readFromBlueprintV1(std::string clipboardData);
+		bool readFromBlueprintV2(std::string clipboardData);
 	};
 
 }

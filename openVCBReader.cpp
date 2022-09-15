@@ -200,65 +200,71 @@ namespace openVCB {
 		return data.substr(begin, end - begin);
 	}
 
-	bool processData(std::vector<unsigned char> logicData, int headerSize, int& width, int& height, unsigned char*& originalImage, unsigned long long& imSize) {
-		int* header = (int*)&logicData[logicData.size() - headerSize];
-
-		const int imgDSize = header[5];
-		width = header[3];
-		height = header[1];
+	bool uncompressZSTDData(unsigned char* compressedData, size_t compressedSize, int width, int height, int imgDSize, unsigned char*& originalImage, unsigned long long& imSize) {
 
 		if (imgDSize != width * height * 4) {
-			printf("error: header width x height does not match header length");
+			printf("error: header width x height does not match header length\n");
 			return 0;
 		}
 
-		unsigned char* cc = &logicData[0];
-		size_t ccSize = logicData.size() - headerSize;
-
-		imSize = ZSTD_getFrameContentSize(cc, ccSize);
+		imSize = ZSTD_getFrameContentSize(compressedData, compressedSize);
 
 		if (imSize == ZSTD_CONTENTSIZE_ERROR) {
-			printf("error: not compressed by zstd!");
+			printf("error: not compressed by zstd!\n");
 			return 0;
 		}
 		else if (imSize == ZSTD_CONTENTSIZE_UNKNOWN) {
-			printf("error: original size unknown!");
+			printf("error: original size unknown!\n");
 			return 0;
 		}
 		else if (imSize != imgDSize) {
-			printf("error: decompressed image data size does not match header");
+			printf("error: decompressed image data size does not match header\n");
 			return 0;
 		}
 		else {
 			originalImage = new unsigned char[imSize];
-			size_t const dSize = ZSTD_decompress(originalImage, imSize, cc, ccSize);
+			size_t const dSize = ZSTD_decompress(originalImage, imSize, compressedData, compressedSize);
 			return 1;
 		}
 	}
 
-	bool Project::processLogicData(std::vector<unsigned char> logicData, int headerSize) {
+	void Project::parseHeader(const std::vector<unsigned char>& logicData, int headerSize, unsigned char*& compressedData, size_t& compressedSize, int& width, int& height, int& imgDSize) {
+		compressedData = (unsigned char*)&logicData[0];
+		compressedSize = logicData.size() - headerSize;
+
+		int* header = (int*)&logicData[logicData.size() - headerSize];
+		height = header[1];
+		width = header[3];
+		imgDSize = header[5];		
+	}
+
+	bool Project::processLogicData(unsigned char* compressedData, size_t compressedSize, int width, int height, int imgDSize) {
 		unsigned long long imSize;
-		if (processData(logicData, headerSize, width, height, originalImage, imSize)) {
+		this->width = width;
+		this->height = height;
+
+		if (uncompressZSTDData(compressedData, compressedSize, width, height, imgDSize, originalImage, imSize)) {
 			image = new InkPixel[imSize];
 #pragma omp parallel for schedule(static, 8196)
 			for (int i = 0; i < imSize / 4; i++)
 				image[i] = color2ink(((int*)originalImage)[i]);
 
-			return 1;
+			return true;
 		}
-
-		return 0;
+		return false;
 	}
 
-	void Project::Project::processDecorationData(std::vector<unsigned char> decorationData, int*& decoData) {
+	bool Project::processDecorationData(unsigned char* compressedData, size_t compressedSize, int width, int height, int imgDSize, int*& decoData) {
 		unsigned long long imSize;
-		int width, height;
-		if (processData(decorationData, 24, width, height, (unsigned char*&)decoData, imSize)) {
+
+		if (uncompressZSTDData(compressedData, compressedSize, width, height, imgDSize, (unsigned char *&)decoData, imSize)) {
 			for (int i = 0; i < imSize / 4; i++) {
 				int color = decoData[i];
 				decoData[i] = col2int(color);
 			}
+			return true;
 		}
+		return false;
 	}
 
 	void Project::readFromVCB(std::string filePath) {
@@ -378,7 +384,12 @@ namespace openVCB {
 			memset(vmem, 0, 4 * vmemSize);
 		}
 
-		if (Project::processLogicData(logicData, 24)) {
+		int imgDSize;
+		unsigned char* cc;
+		size_t ccSize;
+
+		Project::parseHeader(logicData, 24, cc, ccSize, width, height, imgDSize);
+		if (Project::processLogicData(cc, ccSize, width, height, imgDSize)) {
 			// Overwrite latch locations for vmem
 			if (vmemFlag) {
 				for (int i = 0; i < vmAddr.numBits; i++) {
@@ -411,8 +422,14 @@ namespace openVCB {
 			// printf("Loaded image %dx%d (%d bytes)\n", width, height, dSize);
 		}
 
-		Project::processDecorationData(decorationData[0], decoration[0]);
-		Project::processDecorationData(decorationData[1], decoration[1]);
-		Project::processDecorationData(decorationData[2], decoration[2]);
+		//decoration layers
+		for (int i = 0; i <= 2; i++) {
+			int imgDSize;
+			unsigned char* cc;
+			size_t ccSize;
+
+			Project::parseHeader(decorationData[i], 24, cc, ccSize, width, height, imgDSize);
+			Project::processDecorationData(cc, ccSize, width, height, imgDSize, decoration[i]);
+		}
 	}
 }
