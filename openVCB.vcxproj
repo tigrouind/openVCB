@@ -158,6 +158,7 @@
     <ClCompile Include="openVCBPreprocessing.cpp" />
     <ClCompile Include="openVCBReader.cpp" />
     <ClCompile Include="openVCBSim.cpp" />
+    <ClCompile Include="SHA1.h" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="gorder\Graph.h" />

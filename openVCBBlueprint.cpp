@@ -1,5 +1,6 @@
 #include "openVCB.h"
 #include "base64.h"
+#include "SHA1.h"
 
 namespace openVCB {    
     std::string removeWhitespace(std::string str) {
@@ -7,7 +8,8 @@ namespace openVCB {
         return str;
     }
 
-    int readInt(unsigned char* data, int offset) {        
+    int readInt(std::vector<unsigned char>::iterator vector, int offset) {
+        unsigned char* data = vector._Ptr;
         return data[offset] << 24 | data[offset + 1] << 16 | data[offset + 2] << 8 | data[offset + 3]; //big-endian
     }
 
@@ -61,18 +63,33 @@ namespace openVCB {
             return false;
         }
 
+        //SHA1 checksum
+        SHA1 sha1;
+        sha1.update(std::string(clipboardData.substr(12)));
+        std::string calculatedChecksum = sha1.final();
+
+        std::ostringstream result;
+        for (size_t i = 0; i < 6; i++) {
+            result << std::hex << std::setfill('0') << std::setw(2);
+            result << (int)parsedData[i + 3];
+        }
+
+        if (calculatedChecksum.compare(0, 12, result.str())) {
+            return false;
+        }       
+
         //process header
         auto iterator = parsedData.begin();
-        int width = readInt(iterator._Ptr, 9);
-        int height = readInt(iterator._Ptr, 13);
+        int width = readInt(iterator, 9);
+        int height = readInt(iterator, 13);
         iterator += 17; //skip header
 
         //process layers
         while (iterator < parsedData.end())
         {
-            size_t compressedSize = readInt(iterator._Ptr, 0);
-            int layerId = readInt(iterator._Ptr, 4);
-            int imgDSize = readInt(iterator._Ptr, 8);
+            size_t compressedSize = readInt(iterator, 0);
+            int layerId = readInt(iterator, 4);
+            int imgDSize = readInt(iterator, 8);
             unsigned char* compressedData = iterator._Ptr + 12;
 
             switch (layerId) {
